@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JARVIS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cyan: #3ee6ff;
+    --cyan-dim: #1a7a8c;
+    --cyan-glow: rgba(62, 230, 255, 0.55);
+    --bg: #04070a;
+    --bg2: #070d12;
+    --amber: #ffb347;
+    --danger: #ff4d6d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, var(--bg2) 0%, var(--bg) 70%);
+    color: var(--cyan);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+  }
+
+  /* ---- scanline + vignette overlay ---- */
+  .overlay {
+    position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(62,230,255,0.025) 0px,
+        rgba(62,230,255,0.025) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+    mix-blend-mode: screen;
+  }
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 49;
+    box-shadow: inset 0 0 18vw 2vw rgba(0,0,0,0.85);
+  }
+  .scanbar {
+    position: fixed; left: 0; right: 0; height: 2px; z-index: 48;
+    background: linear-gradient(to right, transparent, var(--cyan-glow), transparent);
+    opacity: 0.35;
+    animation: scanmove 6s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes scanmove {
+    0%   { top: -2px; }
+    100% { top: 100vh; }
+  }
+
+  /* ---- symmetric two-column layout ---- */
+  .split {
+    width: 100vw; height: 100vh;
+    display: flex;
+    align-items: stretch;
+  }
+  .pane {
+    flex: 1 1 50%;
+    position: relative;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-width: 0;
+  }
+  .divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 6vh 0;
+    background: linear-gradient(to bottom, transparent, var(--cyan-dim), transparent);
+    opacity: 0.45;
+  }
+
+  /* ---- central HUD ring (left pane) ---- */
+  .ringwrap {
+    position: relative;
+    width: min(36vh, 36vw); height: min(36vh, 36vw);
+    display: flex; align-items: center; justify-content: center;
+  }
+  svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ring-outer   { transform-origin: 50% 50%; animation: spin 18s linear infinite; }
+  .ring-mid     { transform-origin: 50% 50%; animation: spin-rev 11s linear infinite; }
+  .ring-inner   { transform-origin: 50% 50%; animation: spin 7s linear infinite; }
+  @keyframes spin     { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
+  @keyframes spin-rev { from { transform: rotate(360deg); } to { transform: rotate(0deg);   } }
+
+  .core {
+    position: absolute;
+    width: 34%; height: 34%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(62,230,255,0.35), rgba(62,230,255,0.02) 70%);
+    box-shadow: 0 0 6vh 1vh var(--cyan-glow);
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  .pane-left.listening .core   { animation: breathe-fast 1.1s ease-in-out infinite; }
+  .pane-left.speaking  .core   { background: radial-gradient(circle, rgba(255,179,71,0.35), rgba(255,179,71,0.02) 70%); box-shadow: 0 0 6vh 1vh rgba(255,179,71,0.55); }
+  .pane-left.speaking  .core   { animation: breathe-fast 0.7s ease-in-out infinite; }
+  @keyframes breathe      { 0%,100% { transform: scale(0.92); opacity: 0.7; } 50% { transform: scale(1.06); opacity: 1; } }
+  @keyframes breathe-fast { 0%,100% { transform: scale(0.90); opacity: 0.75; } 50% { transform: scale(1.12); opacity: 1; } }
+
+  .status {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.35em;
+    font-size: clamp(14px, 1.6vw, 22px);
+    text-transform: uppercase;
+    margin-top: 3.5vh;
+    text-shadow: 0 0 1.2vh var(--cyan-glow);
+    min-height: 1.4em;
+    text-align: center;
+  }
+  .pane-left.speaking .status { color: var(--amber); text-shadow: 0 0 1.2vh rgba(255,179,71,0.6); }
+
+  .label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(10px, 0.9vw, 13px);
+    letter-spacing: 0.3em;
+    opacity: 0.45;
+    margin-top: 0.6vh;
+  }
+
+  /* ---- conversation panel ---- */
+  .convo {
+    margin-top: 4vh;
+    width: min(80%, 560px);
+    min-height: 3.6em;
+    text-align: center;
+    font-size: clamp(13px, 1.2vw, 18px);
+    line-height: 1.6;
+    opacity: 0;
+    transition: opacity 0.45s ease;
+  }
+  .convo.show { opacity: 1; }
+  .convo .you    { color: #8fe9ff; opacity: 0.75; }
+  .convo .jarvis { color: var(--cyan); text-shadow: 0 0 0.8vh var(--cyan-glow); }
+
+  /* ---- right pane: persistent data widgets ---- */
+  .widgets {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2.2vh;
+    width: min(78%, 460px);
+    z-index: 1;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+  }
+  .widgets.hide { opacity: 0; pointer-events: none; }
+
+  .widget {
+    width: 100%;
+    border: 1px solid rgba(62,230,255,0.25);
+    background: rgba(5,12,16,0.55);
+    padding: 1.3vh 1.2vw;
+    text-align: center;
+  }
+  .widget-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase;
+    opacity: 0.5; margin-bottom: 0.7vh;
+  }
+  .widget-value {
+    font-size: clamp(13px, 1.1vw, 17px);
+    min-height: 1.4em;
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+  }
+  .widget-value .scroll-text {
+    display: inline-block;
+    padding-left: 100%;
+    animation-name: ticker-scroll;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  @keyframes ticker-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-100%); }
+  }
+
+  .cmdhint {
+    margin-top: 2.4vh;
+    text-align: center;
+    opacity: 0.4;
+  }
+  .cmdhint div {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    line-height: 1.9;
+  }
+
+  /* ---- sleep mode: fades the whole HUD to near-black, mic keeps listening ---- */
+  .sleepmsg {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 0.35em; font-size: clamp(11px, 1.2vw, 16px);
+    color: var(--cyan-dim);
+    opacity: 0; pointer-events: none;
+    transition: opacity 1.2s ease;
+  }
+  body.asleep .sleepmsg { opacity: 0.55; }
+  body.asleep .split,
+  body.asleep .corner,
+  body.asleep .overlay,
+  body.asleep .scanbar,
+  body.asleep .vignette {
+    opacity: 0;
+    transition: opacity 0.8s ease;
+  }
+
+  .bars {
+    display: flex; align-items: flex-end; gap: 0.9vw;
+    height: 7vh;
+    margin-top: 0.4vh;
+  }
+  .bars span {
+    width: 0.6vw; min-width: 4px;
+    background: linear-gradient(to top, var(--cyan-dim), var(--cyan));
+    opacity: 0.55;
+    border-radius: 2px;
+    animation: barpulse 2.4s ease-in-out infinite;
+  }
+  .bars span:nth-child(1) { height: 30%; animation-delay: 0s;    }
+  .bars span:nth-child(2) { height: 60%; animation-delay: 0.2s;  }
+  .bars span:nth-child(3) { height: 90%; animation-delay: 0.4s;  }
+  .bars span:nth-child(4) { height: 45%; animation-delay: 0.6s;  }
+  .bars span:nth-child(5) { height: 75%; animation-delay: 0.8s;  }
+  .bars span:nth-child(6) { height: 35%; animation-delay: 1.0s;  }
+  @keyframes barpulse {
+    0%, 100% { transform: scaleY(0.4); opacity: 0.4; }
+    50%      { transform: scaleY(1);   opacity: 0.85; }
+  }
+
+  /* ---- right pane: image panel (overlays widgets when shown) ---- */
+  .imgpanel {
+    position: absolute;
+    width: min(70%, 420px);
+    border: 1px solid rgba(62,230,255,0.35);
+    background: rgba(5,12,16,0.75);
+    box-shadow: 0 0 3vh rgba(62,230,255,0.25);
+    padding: 12px;
+    z-index: 5;
+    opacity: 0; transform: scale(0.96);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+  }
+  .imgpanel.show { opacity: 1; transform: scale(1); }
+  .imgpanel img { width: 100%; display: block; filter: saturate(1.05) contrast(1.03); }
+  .imgpanel .caption {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.6; margin-top: 8px; text-align: center;
+  }
+
+  .corner {
+    position: fixed; width: 7vw; height: 7vw; min-width: 60px; min-height: 60px;
+    border-color: var(--cyan-dim); opacity: 0.6;
+    pointer-events: none;
+  }
+  .corner.tl { top: 2vh; left: 2vw; border-top: 2px solid; border-left: 2px solid; }
+  .corner.tr { top: 2vh; right: 2vw; border-top: 2px solid; border-right: 2px solid; }
+  .corner.bl { bottom: 2vh; left: 2vw; border-bottom: 2px solid; border-left: 2px solid; }
+  .corner.br { bottom: 2vh; right: 2vw; border-bottom: 2px solid; border-right: 2px solid; }
+</style>
+</head>
+<body>
+  <div class="vignette"></div>
+  <div class="overlay"></div>
+  <div class="scanbar"></div>
+
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <div class="sleepmsg" id="sleepmsg">SLEEPING — SAY "JARVIS, WAKE UP"</div>
+
+  <div class="split">
+    <div class="pane pane-left" id="stage">
+      <div class="ringwrap">
+        <svg class="ring ring-outer" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="92" fill="none" stroke="var(--cyan)" stroke-width="1.5"
+                  stroke-dasharray="4 10" opacity="0.55"/>
+        </svg>
+        <svg class="ring ring-mid" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="74" fill="none" stroke="var(--cyan)" stroke-width="2"
+                  stroke-dasharray="60 18 10 18" opacity="0.75"/>
+        </svg>
+        <svg class="ring ring-inner" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="56" fill="none" stroke="var(--cyan)" stroke-width="1"
+                  stroke-dasharray="2 6" opacity="0.4"/>
+        </svg>
+        <div class="core"></div>
+      </div>
+
+      <div class="status" id="status">INITIALIZING</div>
+      <div class="label">J.A.R.V.I.S.</div>
+
+      <div class="convo" id="convo">
+        <div class="you" id="you-line"></div>
+        <div class="jarvis" id="jarvis-line"></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="pane pane-right">
+      <div class="widgets" id="widgets">
+        <div class="widget">
+          <div class="widget-label">Weather</div>
+          <div class="widget-value"><span class="scroll-text" id="weather-value">—</span></div>
+        </div>
+        <div class="widget">
+          <div class="widget-label">Headlines</div>
+          <div class="widget-value"><span class="scroll-text" id="news-value">—</span></div>
+        </div>
+        <div class="widget">
+          <div class="widget-label">Markets</div>
+          <div class="widget-value"><span class="scroll-text" id="stock-value">—</span></div>
+        </div>
+        <div class="bars">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="cmdhint">
+          <div>"Jarvis, sleep" — blank display</div>
+          <div>"Jarvis, wake up" — restore display</div>
+        </div>
+      </div>
+
+      <div class="imgpanel" id="imgpanel">
+        <img id="img" src="" alt="">
+        <div class="caption" id="imgcaption"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const stage       = document.getElementById('stage');
+  const statusEl    = document.getElementById('status');
+  const convoEl     = document.getElementById('convo');
+  const youLine     = document.getElementById('you-line');
+  const jarvisLine  = document.getElementById('jarvis-line');
+  const imgPanel    = document.getElementById('imgpanel');
+  const imgEl       = document.getElementById('img');
+  const imgCaption  = document.getElementById('imgcaption');
+  const widgets     = document.getElementById('widgets');
+  const weatherVal  = document.getElementById('weather-value');
+  const newsVal     = document.getElementById('news-value');
+  const stockVal    = document.getElementById('stock-value');
+
+  function setMode(statusText) {
+    const t = (statusText || '').toLowerCase();
+    stage.classList.remove('listening', 'speaking');
+    if (t.includes('listen') || t.includes('go ahead')) stage.classList.add('listening');
+    if (t.includes('speak') || t.includes('response'))  stage.classList.add('speaking');
+  }
+
+  // ---- TV-ticker style: each widget's text scrolls continuously right-to-
+  // left in a loop, instead of blinking to the next item. Speed is scaled
+  // to text length so short and long strings scroll at roughly the same
+  // pace rather than the same fixed duration. ----
+  function setTicker(el, text) {
+    text = text && text.length ? text : '—';
+    el.textContent = text;
+    const duration = Math.max(8, text.length * 0.18);
+    el.style.animationDuration = duration + 's';
+  }
+
+  // Headlines are joined into one continuous scrolling stream (classic news-
+  // ticker style) rather than cutting between separate items.
+  function setNewsTicker(items) {
+    const text = (items && items.length) ? items.join('     •     ') : '—';
+    setTicker(newsVal, text);
+  }
+
+  function connect() {
+    const es = new EventSource('/events');
+    es.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+
+      if ('status' in msg) {
+        statusEl.textContent = (msg.status || '').toUpperCase();
+        setMode(msg.status);
+      }
+      if ('you' in msg) {
+        youLine.textContent = msg.you ? ('YOU: ' + msg.you) : '';
+        jarvisLine.textContent = msg.jarvis ? ('JARVIS: ' + msg.jarvis) : '';
+        convoEl.classList.toggle('show', !!(msg.you || msg.jarvis));
+        if (msg.jarvis) stage.classList.add('speaking'); else stage.classList.remove('speaking');
+      }
+      if ('image' in msg) {
+        if (msg.image) {
+          imgEl.src = msg.image;
+          imgPanel.classList.add('show');
+          widgets.classList.add('hide');
+        } else {
+          imgPanel.classList.remove('show');
+          imgEl.src = '';
+          widgets.classList.remove('hide');
+        }
+      }
+      if ('image_caption' in msg) {
+        imgCaption.textContent = msg.image_caption || '';
+      }
+      if ('hud_weather' in msg) {
+        setTicker(weatherVal, msg.hud_weather);
+      }
+      if ('hud_news' in msg) {
+        setNewsTicker(msg.hud_news);
+      }
+      if ('hud_stock' in msg) {
+        setTicker(stockVal, msg.hud_stock);
+      }
+      if ('hud_sleep' in msg) {
+        document.body.classList.toggle('asleep', !!msg.hud_sleep);
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(connect, 1500);
+    };
+  }
+  connect();
+</script>
+</body>
+</html>

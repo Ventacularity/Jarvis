@@ -1,2 +1,0 @@
-# Jarvis
-Home AI
