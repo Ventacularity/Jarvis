@@ -10,7 +10,7 @@ Jarvis listens for the wake word **"jarvis"** and handles things like:
 - Drawing AI-generated pictures
 - "Drop my needle" — plays music/video live on the projector, dims the lamp, shows an idle picture when nothing's playing
 
-Responses show up on a local HUD page (weather, headlines, stocks, last command, generated images) instead of physical OLED screens.
+Responses show up on a local HUD page (weather, headlines, stocks, last command, generated images).
 
 The projector checks it's actually connected before trying to use it, so things degrade gracefully if it's unplugged. Needle audio comes out of the Pi's headphone jack.
 
